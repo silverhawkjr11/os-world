@@ -1333,8 +1333,8 @@ const hx = (n, w) => '0x' + n.toString(16).toUpperCase().padStart(w || 0, '0');
 
 /* ---------- renderer / camera ---------- */
 const stage = $('stage');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' }); // prefer the integrated GPU on dual-GPU laptops
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
@@ -5560,11 +5560,18 @@ function resize() {
 addEventListener('resize', resize); resize();
 
 /* ---------- loop ---------- */
-let last = performance.now();
+let last = performance.now(), lastDraw = 0, frames = 0, lastInput = 0;
+// frame cap: the animations are slow, so 30 fps looks the same and halves GPU/compositor work (laptop fans);
+// when nothing is animating and the user is not touching the page, 20 fps is enough for the idle motion
+const FPS_ACTIVE = 30, FPS_IDLE = 20;
+['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { lastInput = performance.now(); }, { passive: true }));
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 function loop(now) {
   requestAnimationFrame(loop);
   if (document.hidden) return;
+  const busy = tweens.length > 0 || (cur && cur.running) || now - lastInput < 2000;
+  if (now - lastDraw < 1000 / (busy ? FPS_ACTIVE : FPS_IDLE) - 2) return;
+  lastDraw = now; frames++;
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   runTweens(now);
   if (W.diskFree) W.spin.rotation.y += dt * (RM ? 0.6 : 2.2);
@@ -5590,7 +5597,7 @@ if (TEST) {
   } else if (m && m[2]) { showCard(['cpu', 'tlb', 'ram', 'disk'][+m[2] % 4]); }
 }
 { const m = location.hash.match(/scene=(\d+)/); if (!TEST && m && SCENES[+m[1]]) enterScene(+m[1]); }
-console.log('OSW-READY'); window.__osw = { enterScene, stepOnce, gotoStep, redoStep, backStep, toWorld, showCard, SCENES, INFO, voice, play: () => play() };
+console.log('OSW-READY'); window.__osw = { frames: () => frames, dbg: { renderer, scene, camera, doHover, updateLabels, runTweens, controls, draw() { const t = performance.now(); renderer.render(scene, camera); renderer.getContext().finish(); return performance.now() - t; } }, enterScene, stepOnce, gotoStep, redoStep, backStep, toWorld, showCard, SCENES, INFO, voice, play: () => play() };
 })();
 
 </script>
